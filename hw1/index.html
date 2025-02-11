@@ -3,133 +3,338 @@
 <head>
     <title>INFO4310 HW1</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        .box { fill: rgba(255, 255, 102, 0.3); stroke: rgb(183, 176, 159); }
-        .violin { fill: rgba(156, 198, 152, 0.6); stroke: rgb(213, 209, 209); }
-        .axis-label { font-size: 8px; fill: rgb(89, 117, 105); font-family: 'Roboto'; }
+
+        .title {margin-left:20px;margin-right:30px;font-size: 36px; color: rgb(53, 76, 66);  font-family: 'Merriweather', serif; }
+        .text {width: 1000px ;margin-top:30px;margin-left:30px; margin-right:250px;font-size: 16px; color: rgb(81, 113, 88);  font-family: 'Merriweather', serif; }
+        .dbhBox { fill: rgba(255, 255, 102, 0.3); stroke: rgb(183, 176, 159); }
+        .yearBox{ fill: rgba(182, 177, 151, 0.3); stroke: rgb(183, 176, 159); }
+        .violin { fill: rgba(188, 214, 185, 0.6); stroke: rgb(213, 209, 209); }
+        .dot { fill: rgb(188, 214, 185); }
+        .mean-line { stroke-width: 3px; stroke: rgb(164, 149, 133); }
+        .axis-label { font-size: 9px; fill: rgb(89, 117, 105);   font-family: 'Merriweather', serif; }
+        .axis-title { font-size: 14px; fill: rgb(74, 88, 76);   font-family: 'Merriweather', serif; }
+        .area { opacity: 0.8; }
+
+        .visualization-container {
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .notes-textarea {
+            margin-left: 20px;
+            width: 200px;
+            height: 400px;
+            padding: 5px;
+            font-family: 'Merriweather', serif;
+            border: 0ch;
+            font-size: 14px;
+            background-color: #ffffff;
+            margin-right: 20px;
+        }
+
     </style>
 </head>
 <body>
-    <svg width="900" height="900"></svg>
+
+    <div class="visualization-container">
+        <p class="title">Species as Forest!</p>
+        <p class="text">This visualization explores how different tree species-focusing on DBH (diameter at breast height) and planting year-can form "tree-like" shapes based on their statistical distributions. By placing multiple species on the same graph, viewers can compare how species differ in terms of DBH or planting dates. In addition, viewing the DBH and Year graphs side by side helps reveal links between a tree's planting year and its trunk diameter by species.</p>
+    </div>
+
+    <div class="visualization-container">
+        <svg id="violinChartDiameter" width="1200" height="500"></svg>
+        <textarea class="notes-textarea" placeholder="In this graph, most trees have an average DBH of around 3. However, outliers vary by species. Notably, the Indian Laurel Fig stands out with a tall and slim 'tree' shape, indicating an even distribution and a high mean DBH.""></textarea>
+    </div>
+
+    <div class="visualization-container">
+        <svg id="violinChartYear" width="1200" height="500"></svg>
+        <textarea class="notes-textarea" placeholder="This graph shows that most trees were planted between 1990 and 2010, with a sharp increase in 2005, particularly for the top four species. Notably, a few outliers date back to before 1970, suggesting that species like the Chinese Elm and New Zealand Christmas Tree may be among the oldest in this 'forest.'"></textarea>
+    </div>
+
     <script>
-        d3.csv("Street_Tree_List-2022-01-30_RAW.csv").then(function(data) {
-            data.forEach(d => {
-                d.DBH = +d.DBH;  
-            });
+    (function() {
+                             
+        const marginDBH = { top: 10, right: 50, bottom: 150, left: 80 },
+              widthDBH = 1200 - marginDBH.left - marginDBH.right,
+              heightViolinDBH = 500 - marginDBH.top - marginDBH.bottom;
 
-            let speciesCounts = d3.rollup(data, v => v.length, d => d.qSpecies);
-            let topSpecies = Array.from(speciesCounts.entries())
-                                 .sort((a, b) => d3.descending(a[1], b[1]))
-                                 .slice(0, 20) 
-                                 .map(d => d[0]); 
+              const svgDiameter = d3.select("#violinChartDiameter")
+                             .append("g")
+                             .attr("transform", `translate(${marginDBH.left},${marginDBH.top})`);
 
-            let filteredData = data.filter(d => topSpecies.includes(d.qSpecies));
+        function kernelDensityEstimatorDBH(kernel, X) {
+            return function(V) {
+                return X.map(x => [x, d3.mean(V, v => kernel(x - v)) || 0]);
+            };
+        }
 
-            let margin = {top: 40, right: 150, bottom: 150, left: 80},
-                width = 1200 - margin.left - margin.right,
-                height = 600 - margin.top - margin.bottom;
-            
-            let svg = d3.select("svg")
-                        .attr("width", width + margin.left + margin.right)
-                        .attr("height", height + margin.top + margin.bottom)
-                        .append("g")
-                        .attr("transform", `translate(${margin.left},${margin.top})`);
-            
-            let x = d3.scaleBand()
-                      .domain(topSpecies)
-                      .range([0, width])
-                      .padding(0.5);
-            
-            let y = d3.scaleLinear()
-                      .domain([0, 40])
-                      .range([height, 0]);
-            
-            function kernelDensityEstimator(kernel, X) {
-                return function(V) {
-                    return X.map(x => [x, d3.mean(V, v => kernel(x - v)) || 0]);
-                };
-            }
-            function kernelEpanechnikov(k) {
-                return function(v) {
-                    return Math.abs(v / k) <= 1 ? 0.75 * (1 - (v / k) ** 2) / k : 0;
-                };
-            }
-            
-            let kde = kernelDensityEstimator(kernelEpanechnikov(5), d3.range(0, d3.max(filteredData, d => d.DBH), 1));
-            
-            topSpecies.forEach(species => {
-                let speciesData = filteredData.filter(d => d.qSpecies === species).map(d => d.DBH);
-                if (speciesData.length === 0) return;
-                
-                let density = kde(speciesData);
-                let xPos = x(species) + x.bandwidth() / 2;
-                let area = d3.area()
-                    .x(d => xPos - d[1] * 100)
-                    .y(d => y(d[0]))
-                    .x1(d => xPos + d[1] * 100);
-                
-                svg.append("path")
-                   .datum(density)
-                   .attr("class", "violin")
-                   .attr("d", area);
+        function kernelEpanechnikovDBH(k) {
+            return function(v) {
+                return Math.abs(v / k) <= 1 ? 0.75 * (1 - (v / k) ** 2) / k : 0;
+            };
+        }
+
+        function drawViolinPlotDBH(svg, data, yScale, xScale, topSpecies, valueExtractor, color) {
+        const kde = kernelDensityEstimatorDBH(kernelEpanechnikovDBH(5), 
+            d3.range(d3.min(data, valueExtractor), d3.max(data, valueExtractor), 1)
+        );
+
+        topSpecies.forEach(species => {
+            const speciesData = data.filter(d => d.qSpecies === species).map(valueExtractor);
+            if (speciesData.length === 0) return;
+
+            const density = kde(speciesData);
+            const xPos = xScale(species) + xScale.bandwidth() / 2;
+
+            const area = d3.area()
+                .x(d => xPos - d[1] * 100)
+                .y(d => yScale(d[0]))
+                .x1(d => xPos + d[1] * 100);
+
+            svg.append("path")
+               .datum(density)
+               .attr("class", "violin")
+               .attr("d", area)
+               .attr("fill", color)
+               .attr("stroke", "rgb(213, 209, 209)");
+
+            const q1 = d3.quantile(speciesData, 0.25);
+            const median = d3.quantile(speciesData, 0.5);
+            const q3 = d3.quantile(speciesData, 0.75);
+            const min = d3.min(speciesData);
+            const max = d3.max(speciesData);
+
+            const [yMin, yMax] = yScale.domain();
+            const clampedMin = Math.max(min, yMin);
+            const clampedMax = Math.min(max, yMax);
+
+            svg.append("line")
+               .attr("x1", xPos)
+               .attr("x2", xPos)
+               .attr("y1", yScale(clampedMin))
+               .attr("y2", yScale(clampedMax))
+               .attr("stroke", "rgb(183, 165, 144)");
+
+            svg.append("rect")
+               .attr("x", xPos - 10)
+               .attr("y", yScale(q3))
+               .attr("width", 20)
+               .attr("height", yScale(q1) - yScale(q3))
+               .attr("class", "dbhBox");
+
+            svg.append("line")
+               .attr("x1", xPos - 10)
+               .attr("x2", xPos + 10)
+               .attr("y1", yScale(median))
+               .attr("y2", yScale(median))
+               .attr("class", "mean-line");
+
+            speciesData.forEach(d => {
+                if (d < q1 - 1.5 * (q3 - q1) || d > q3 + 1.5 * (q3 - q1)) {
+                    const clampedValue = Math.min(Math.max(d, yMin), yMax);
+                    svg.append("circle")
+                       .attr("cx", xPos)
+                       .attr("cy", yScale(clampedValue))
+                       .attr("r", 3)
+                       .attr("class", "outlier")
+                       .attr("fill", "rgb(183, 175, 164)");
+                }
             });
-            
-            topSpecies.forEach(species => {
-                let speciesData = filteredData.filter(d => d.qSpecies === species).map(d => d.DBH);
-                if (speciesData.length === 0) return;
-                
-                let q1 = d3.quantile(speciesData, 0.25);
-                let median = d3.quantile(speciesData, 0.5);
-                let q3 = d3.quantile(speciesData, 0.75);
-                let min = d3.min(speciesData);
-                let max = d3.max(speciesData);
-                let xPos = x(species) + x.bandwidth() / 2;
-                
-                svg.append("line")
-                   .attr("x1", xPos)
-                   .attr("x2", xPos)
-                   .attr("y1", y(min))
-                   .attr("y2", y(max))
-                   .attr("stroke", "rgb(183, 165, 144)");
-                
-                svg.append("rect")
-                   .attr("x", xPos - 10)
-                   .attr("y", y(q3))
-                   .attr("width", 20)
-                   .attr("height", y(q1) - y(q3))
-                   .attr("class", "box");
-                
-                svg.append("line")
-                   .attr("x1", xPos - 10)
-                   .attr("x2", xPos + 10)
-                   .attr("y1", y(median))
-                   .attr("y2", y(median))
-                   .attr("stroke", "rgb(183, 165, 144)");
-         
-               speciesData.forEach(d => {
-                    if (d < q1 - 1.5 * (q3 - q1) || d > q3 + 1.5 * (q3 - q1)) {
-                        svg.append("circle")
-                           .attr("cx", xPos)
-                           .attr("cy", y(d))
-                           .attr("r", 3)
-                           .attr("class", "outlier")
-                           .attr("fill", "rgb(183, 215, 184)");
-                    }
-                });
-            });
-            
+        });
+    }
+        function addAxesDBH(svg, xScale, yScale, yLabel) {
             svg.append("g")
-               .attr("transform", `translate(0,${height})`)
-               .call(d3.axisBottom(x))
+               .attr("transform", `translate(0,${heightViolinDBH})`)
+               .call(d3.axisBottom(xScale))
                .selectAll("text")
                .attr("class", "axis-label")
                .attr("transform", "rotate(-45)")
                .attr("text-anchor", "end");
-            
+
             svg.append("g")
-               .call(d3.axisLeft(y))
-               .selectAll("text").attr("class", "axis-label");
+               .call(d3.axisLeft(yScale))
+               .selectAll("text")
+               .attr("class", "axis-label");
+
+            svg.append("text")
+               .attr("x", widthDBH / 2)
+               .attr("y", heightViolinDBH + 100)
+               .style("text-anchor", "middle")
+               .attr("class", "axis-title")
+               .text("Tree Species");
+
+            svg.append("text")
+               .attr("transform", "rotate(-90)")
+               .attr("y", -50)
+               .attr("x", -heightViolinDBH / 2)
+               .style("text-anchor", "middle")
+               .attr("class", "axis-title")
+               .text(yLabel);
+        }
+
+        d3.csv("tree_sorted.csv").then(function(dataDBH) {
+            dataDBH.forEach(d => {
+                d.DBH = +d.DBH;
+                const speciesParts = d.qSpecies.split("::")
+                d.qSpecies = speciesParts.length > 1 && speciesParts[1] ? speciesParts.pop() : speciesParts[0];
+            });
+
+            const speciesCountsDBH = d3.rollup(dataDBH, v => v.length, d => d.qSpecies);
+            const topSpeciesDBH = Array.from(speciesCountsDBH.entries())
+                                     .sort((a, b) => d3.descending(a[1], b[1]))
+                                     .slice(0, 30)
+                                     .map(d => d[0]);
+
+            const xDBH = d3.scaleBand()
+                          .domain(topSpeciesDBH)
+                          .range([0, widthDBH])
+                          .padding(0.5);
+
+            const yDBH = d3.scaleLinear()
+                          .domain([0, 40])
+                          .range([heightViolinDBH, 0]);
+
+            drawViolinPlotDBH(svgDiameter, dataDBH, yDBH, xDBH, topSpeciesDBH, d => d.DBH, "rgba(156, 198, 152, 0.6)");
+            addAxesDBH(svgDiameter, xDBH, yDBH, "Diameter at Breast Height (DBH) (cm)");
         });
+    })();
+    </script>
+
+
+<script>
+    (function() {
+        const marginYear = { top: 20, right: 50, bottom: 150, left: 80 },
+              widthYear = 1200 - marginYear.left - marginYear.right,
+              heightViolinYear = 500 - marginYear.top - marginYear.bottom;
+
+        const svgYear = d3.select("#violinChartYear")
+                         .append("g")
+                         .attr("transform", `translate(${marginYear.left},${marginYear.top})`);
+
+                         function drawYearPlot(svg, data, yScale, xScale, topSpecies, valueExtractor) {
+
+    topSpecies.forEach(species => {
+        const speciesData = data.filter(d => d.qSpecies === species).map(valueExtractor);
+        if (speciesData.length === 0) return;
+
+        const xPos = xScale(species) + xScale.bandwidth() / 2;
+
+        const rawData = data.filter(d => d.qSpecies === species);
+        rawData.forEach(d => {
+            svg.append("circle")
+               .attr("cx", xPos + (Math.random() - 0.5) * 25) 
+               .attr("cy", yScale(d.PlantDate))
+               .attr("r", 3)
+               .attr("class", "dot")
+               .attr("opacity", 0.2)
+               .lower();  
+        });
+
+        const q1 = d3.quantile(speciesData, 0.25);
+        const median = d3.quantile(speciesData, 0.5);
+        const q3 = d3.quantile(speciesData, 0.75);
+        const min = d3.min(speciesData);
+        const max = d3.max(speciesData);
+
+        svg.append("line")
+           .attr("x1", xPos)
+           .attr("x2", xPos)
+           .attr("y1", yScale(new Date(min, 0, 1)))
+           .attr("y2", yScale(new Date(max, 0, 1)))
+           .attr("stroke", "rgb(183, 165, 144)");
+
+        const box = svg.append("rect")
+           .attr("x", xPos - 10)
+           .attr("y", yScale(new Date(q3, 0, 1)))
+           .attr("width", 20)
+           .attr("height", yScale(new Date(q1, 0, 1)) - yScale(new Date(q3, 0, 1)))
+           .attr("class", "yearBox")
+           .raise();  
+
+        svg.append("line")
+           .attr("x1", xPos - 10)
+           .attr("x2", xPos + 10)
+           .attr("y1", yScale(new Date(median, 0, 1)))
+           .attr("y2", yScale(new Date(median, 0, 1)))
+           .attr("class", "mean-line")
+
+        speciesData.forEach(d => {
+            if (d < q1 - 1.5 * (q3 - q1) || d > q3 + 1.5 * (q3 - q1)) {
+                svg.append("circle")
+                   .attr("cx", xPos)
+                   .attr("cy", yScale(new Date(d, 0, 1)))
+                   .attr("r", 3)
+                   .attr("class", "outlier")
+                   .attr("fill", "rgb(183, 175, 164)");
+            }
+        });
+    });
+}
+
+        function addAxesYear(svg, xScale, yScale, yLabel) {
+            svg.append("g")
+               .attr("transform", `translate(0,${heightViolinYear})`)
+               .call(d3.axisBottom(xScale))
+               .selectAll("text")
+               .attr("class", "axis-label")
+               .attr("transform", "rotate(-45)")
+               .attr("text-anchor", "end");
+
+            svg.append("g")
+               .call(d3.axisLeft(yScale).tickFormat(d3.timeFormat("%Y")))
+               .selectAll("text")
+               .attr("class", "axis-label");
+
+            svg.append("text")
+               .attr("x", widthYear / 2)
+               .attr("y", heightViolinYear + 100)
+               .style("text-anchor", "middle")
+               .attr("class", "axis-title")
+               .text("Tree Species");
+
+            svg.append("text")
+               .attr("transform", "rotate(-90)")
+               .attr("y", -50)
+               .attr("x", -heightViolinYear / 2)
+               .style("text-anchor", "middle")
+               .attr("class", "axis-title")
+               .text(yLabel);
+        }
+
+        d3.csv("tree_sorted.csv").then(function(dataYear) {
+            dataYear.forEach(d => {
+                d.PlantDate = d3.timeParse("%Y-%m")(d.PlantDate);
+                const speciesParts = d.qSpecies.split("::")
+                d.qSpecies = speciesParts.length > 1 && speciesParts[1] ? speciesParts.pop() : speciesParts[0];
+            });
+
+            const filteredDataYear = dataYear.filter(d => 
+                d.PlantDate !== null && d.PlantDate.getFullYear() > 1900
+            );
+
+            const speciesCountsYear = d3.rollup(filteredDataYear, v => v.length, d => d.qSpecies);
+            const topSpeciesYear = Array.from(speciesCountsYear.entries())
+                                      .sort((a, b) => d3.descending(a[1], b[1]))
+                                      .slice(0, 30)
+                                      .map(d => d[0]);
+
+            const xYear = d3.scaleBand()
+                           .domain(topSpeciesYear)
+                           .range([0, widthYear])
+                           .padding(0.5);
+
+            const yYear = d3.scaleTime()
+                           .domain(d3.extent(filteredDataYear, d => d.PlantDate))
+                           .range([heightViolinYear, 0]);
+
+            drawYearPlot(svgYear, filteredDataYear, yYear, xYear, topSpeciesYear, d => d.PlantDate.getFullYear());
+            addAxesYear(svgYear, xYear, yYear, "Plant Year");
+        });
+    })();
     </script>
 </body>
 </html>
